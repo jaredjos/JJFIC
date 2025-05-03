@@ -36,25 +36,40 @@ for i in range(int(num_custom_investments)):
     growth = st.sidebar.slider(f'Growth Rate {i+1} (%)', min_value=1.0, max_value=50.0, value=12.0, step=0.5)
     custom_investments.append((year, amount, growth))
 
+# Custom Withdrawals
+st.sidebar.subheader('Custom Withdrawals')
+custom_withdrawals = []
+num_custom_withdrawals = st.sidebar.number_input('Number of Custom Withdrawals', min_value=0, max_value=10, value=0)
+
+for i in range(int(num_custom_withdrawals)):
+    st.sidebar.write(f'Custom Withdrawal {i+1}')
+    year = st.sidebar.number_input(f'Year of Withdrawal {i+1}', min_value=age_retire, max_value=100, value=age_retire)
+    amount = st.sidebar.number_input(f'Withdrawal Amount {i+1} ({currency_symbol})', min_value=0, value=100000)
+    custom_withdrawals.append((year, amount))
+
 # Calculation logic
 years = np.arange(age_start, 101)
-df = pd.DataFrame(index=years, columns=['Age', 'Year Start Balance', 'Annual Investment', 'Custom Investments', 'Year End Balance', 'SWP Withdrawal', 'Adjusted End Balance'])
+df = pd.DataFrame(index=years, columns=['Age', 'Year Start Balance', 'Annual Investment', 'Custom Investments', 'Year End Balance', 'SWP Withdrawal', 'Custom Withdrawals', 'Adjusted End Balance'])
 df['Age'] = years
 
 balance = initial_lump_sum
 monthly_inv = monthly_investment
 current_swp = swp_monthly_withdrawal
 custom_balance = {year: 0 for year in years}
+custom_withdrawal_balance = {year: 0 for year in years}
 
 for custom_year, amount, growth in custom_investments:
     custom_balance[custom_year] += amount
 
+for custom_year, amount in custom_withdrawals:
+    custom_withdrawal_balance[custom_year] += amount
+
 for year in years:
     annual_investment = monthly_inv * 12 if age_start <= year < age_end else 0
     custom_investment = custom_balance[year]
+    custom_withdrawal = custom_withdrawal_balance[year]
 
-    balance = balance * (1 + annual_return / 100) + annual_investment
-    balance += custom_investment
+    balance = balance * (1 + annual_return / 100) + annual_investment + custom_investment
 
     df.at[year, 'Year Start Balance'] = balance - annual_investment - custom_investment
     df.at[year, 'Annual Investment'] = annual_investment
@@ -64,11 +79,14 @@ for year in years:
     if year >= age_retire:
         withdrawal = current_swp * 12
         balance -= withdrawal
-        df.at[year, 'SWP Withdrawal'] = withdrawal
         current_swp *= (1 + swp_inflation / 100)
     else:
-        df.at[year, 'SWP Withdrawal'] = 0
+        withdrawal = 0
 
+    balance -= custom_withdrawal
+
+    df.at[year, 'SWP Withdrawal'] = withdrawal
+    df.at[year, 'Custom Withdrawals'] = custom_withdrawal
     df.at[year, 'Adjusted End Balance'] = balance
 
     if year >= age_start:
@@ -76,18 +94,27 @@ for year in years:
 
 # Display Results
 st.subheader('Investment Breakdown by Year')
-st.dataframe(df.style.format(f"{currency_symbol}{{:,.0f}}"))
+st.dataframe(df.style.format({
+    'Year Start Balance': f"{currency_symbol}{{:,.0f}}",
+    'Annual Investment': f"{currency_symbol}{{:,.0f}}",
+    'Custom Investments': f"{currency_symbol}{{:,.0f}}",
+    'Year End Balance': f"{currency_symbol}{{:,.0f}}",
+    'SWP Withdrawal': f"{currency_symbol}{{:,.0f}}",
+    'Custom Withdrawals': f"{currency_symbol}{{:,.0f}}",
+    'Adjusted End Balance': f"{currency_symbol}{{:,.0f}}",
+}))
 
 # Plotting
 st.subheader('Investment Growth Over Time')
 st.line_chart(df[['Year End Balance', 'Adjusted End Balance']])
 
-st.subheader('Adjusted Growth Over Time (Post SWP)')
+st.subheader('Adjusted Growth Over Time (Post Withdrawals)')
 st.line_chart(df['Adjusted End Balance'])
 
-st.subheader('SWP Withdrawals Over Time')
-st.bar_chart(df['SWP Withdrawal'])
+st.subheader('Total Withdrawals Over Time')
+st.bar_chart(df[['SWP Withdrawal', 'Custom Withdrawals']])
 
 # Additional Insights
-final_balance = df.loc[100, 'Adjusted End Balance']
-st.metric(f"Final Balance at Age 100 ({currency_symbol})", f"{currency_symbol}{final_balance:,.0f}")
+balance_age = st.sidebar.slider('Balance at Age', min_value=int(age_start), max_value=100, value=60)
+selected_balance = df.loc[balance_age, 'Adjusted End Balance']
+st.metric(f"Balance at Age {balance_age} ({currency_symbol})", f"{currency_symbol}{selected_balance:,.0f}")
